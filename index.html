@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="App de clima feito com HTML, CSS e JavaScript puro, consumindo a API Open-Meteo.">
+  <title>App de Clima</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="app__header">
+      <h1 class="app__title">☁️ App de Clima</h1>
+      <p class="app__subtitle">Pesquise qualquer cidade do mundo</p>
+    </header>
+
+    <form class="search" id="search-form" autocomplete="off">
+      <label for="city-input" class="visually-hidden">Nome da cidade</label>
+      <input
+        type="text"
+        id="city-input"
+        class="search__input"
+        placeholder="Ex.: São Paulo"
+        maxlength="80"
+        required
+      >
+      <button type="submit" class="search__button" id="search-button">Buscar</button>
+      <button type="button" class="search__button search__button--icon" id="location-button"
+        title="Usar minha localização" aria-label="Usar minha localização">📍</button>
+    </form>
+
+    <!-- Mensagens de status: carregando / erro. aria-live faz leitores de tela anunciarem a mudança -->
+    <p class="status" id="status" role="status" aria-live="polite"></p>
+
+    <section class="weather hidden" id="weather" aria-labelledby="weather-city">
+      <div class="weather__main">
+        <div>
+          <h2 class="weather__city" id="weather-city"></h2>
+          <p class="weather__description" id="weather-description"></p>
+        </div>
+        <span class="weather__icon" id="weather-icon" aria-hidden="true"></span>
+      </div>
+
+      <p class="weather__temp"><span id="weather-temp"></span>°C</p>
+
+      <ul class="details">
+        <li class="details__item">
+          <span class="details__label">Sensação</span>
+          <span class="details__value" id="weather-feels"></span>
+        </li>
+        <li class="details__item">
+          <span class="details__label">Umidade</span>
+          <span class="details__value" id="weather-humidity"></span>
+        </li>
+        <li class="details__item">
+          <span class="details__label">Vento</span>
+          <span class="details__value" id="weather-wind"></span>
+        </li>
+      </ul>
+
+      <h3 class="forecast__title">Próximos dias</h3>
+      <ul class="forecast" id="forecast"></ul>
+    </section>
+
+    <footer class="app__footer">
+      Dados: <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a>
+    </footer>
+  </main>
+
+  <script src="js/weatherCodes.js"></script>
+  <script src="js/script.js"></script>
+</body>
+</html>
