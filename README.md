@@ -91,7 +91,7 @@ app-clima/
 
 ## 👤 Autor
 
-Feito por **SEU NOME** — [LinkedIn](https://www.linkedin.com/in/SEU-PERFIL) · [GitHub](https://github.com/moacirnascimento439)
+Feito por **Moacir de Jesus Nascimento** — [LinkedIn](https://www.linkedin.com/in/moacir-nascimento2003/) · [GitHub](https://github.com/moacirnascimento439)
 
 ## 📄 Licença
 
