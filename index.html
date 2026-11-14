@@ -16,15 +16,23 @@
     </header>
 
     <form class="search" id="search-form" autocomplete="off">
-      <label for="city-input" class="visually-hidden">Nome da cidade</label>
-      <input
-        type="text"
-        id="city-input"
-        class="search__input"
-        placeholder="Ex.: São Paulo"
-        maxlength="80"
-        required
-      >
+      <!-- Campo + lista de sugestões. role="combobox" é o padrão ARIA de autocomplete -->
+      <div class="search__field">
+        <label for="city-input" class="visually-hidden">Nome da cidade</label>
+        <input
+          type="text"
+          id="city-input"
+          class="search__input"
+          placeholder="Ex.: São Paulo"
+          maxlength="80"
+          required
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded="false"
+          aria-controls="suggestions"
+        >
+        <ul class="suggestions hidden" id="suggestions" role="listbox" aria-label="Sugestões de cidades"></ul>
+      </div>
       <button type="submit" class="search__button" id="search-button">Buscar</button>
       <button type="button" class="search__button search__button--icon" id="location-button"
         title="Usar minha localização" aria-label="Usar minha localização">📍</button>

@@ -7,7 +7,10 @@
 
 const GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search";
 const FORECAST_URL = "https://api.open-meteo.com/v1/forecast";
-const STORAGE_KEY = "app-clima:ultima-cidade";
+const STORAGE_KEY = "app-clima:ultimo-local";
+const SUGGESTIONS_LIMIT = 5;
+const SUGGESTIONS_MIN_CHARS = 2;
+const DEBOUNCE_MS = 300;
 const FORECAST_DAYS = 5;
 
 // ---------- Seleção de elementos do DOM ----------
@@ -16,6 +19,7 @@ const cityInput = document.getElementById("city-input");
 const searchButton = document.getElementById("search-button");
 const locationButton = document.getElementById("location-button");
 const statusEl = document.getElementById("status");
+const suggestionsEl = document.getElementById("suggestions");
 const weatherEl = document.getElementById("weather");
 
 const cityEl = document.getElementById("weather-city");
@@ -31,49 +35,65 @@ const forecastEl = document.getElementById("forecast");
 // ignoramos a resposta da busca antiga (evita "condição de corrida").
 let currentRequestId = 0;
 
+// Estado do autocomplete
+let suggestions = [];           // lugares exibidos na lista
+let activeIndex = -1;           // item destacado pelo teclado (-1 = nenhum)
+let debounceTimer = null;       // timer do debounce
+let suggestionsController = null; // AbortController da busca de sugestões
+
 // ---------- localStorage seguro ----------
+// Guardamos o lugar inteiro (nome + coordenadas) como JSON.
 // Em modo anônimo alguns navegadores bloqueiam o localStorage e lançam erro.
-function saveLastCity(city) {
+function saveLastPlace(place) {
   try {
-    localStorage.setItem(STORAGE_KEY, city);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(place));
   } catch {
     // sem problema: o app funciona sem salvar
   }
 }
 
-function loadLastCity() {
+function loadLastPlace() {
   try {
-    return localStorage.getItem(STORAGE_KEY);
+    const place = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    return place && typeof place.latitude === "number" ? place : null;
   } catch {
-    return null;
+    return null; // nada salvo, JSON inválido ou localStorage bloqueado
   }
 }
 
 // ---------- Funções de API ----------
 
 /**
- * Busca as coordenadas de uma cidade pelo nome.
- * @returns {Promise<{name, latitude, longitude, country, admin1}>}
+ * Busca cidades cujo nome combina com o texto digitado.
+ * @param {string} query - texto digitado
+ * @param {number} count - quantidade máxima de resultados
+ * @param {AbortSignal} [signal] - permite cancelar a requisição
+ * @returns {Promise<Array<{name, latitude, longitude, country, admin1}>>}
  */
-async function fetchCoordinates(city) {
+async function fetchPlaces(query, count, signal) {
   const params = new URLSearchParams({
-    name: city,
-    count: 1,
+    name: query,
+    count,
     language: "pt",
     format: "json",
   });
 
-  const response = await fetch(`${GEOCODING_URL}?${params}`);
+  const response = await fetch(`${GEOCODING_URL}?${params}`, { signal });
   if (!response.ok) {
     throw new Error("Não foi possível buscar a cidade. Tente novamente.");
   }
 
   const data = await response.json();
-  if (!data.results || data.results.length === 0) {
+  return data.results || []; // a API omite "results" quando não acha nada
+}
+
+/** Busca a cidade mais relevante para o nome digitado. */
+async function fetchCoordinates(city) {
+  const [place] = await fetchPlaces(city, 1);
+  if (!place) {
     throw new Error(`Cidade "${city}" não encontrada.`);
   }
-
-  return data.results[0];
+  return place;
 }
 
 /**
@@ -180,21 +200,149 @@ function formatPlaceName(place) {
   return [...new Set(parts)].join(", ");
 }
 
+// ---------- Autocomplete (sugestões enquanto digita) ----------
+
+function hideSuggestions() {
+  clearTimeout(debounceTimer);
+  if (suggestionsController) suggestionsController.abort();
+  suggestions = [];
+  activeIndex = -1;
+  suggestionsEl.innerHTML = "";
+  suggestionsEl.classList.add("hidden");
+  cityInput.setAttribute("aria-expanded", "false");
+  cityInput.removeAttribute("aria-activedescendant");
+}
+
+function renderSuggestions(places) {
+  suggestions = places;
+  activeIndex = -1;
+  suggestionsEl.innerHTML = "";
+
+  if (places.length === 0) {
+    hideSuggestions();
+    return;
+  }
+
+  places.forEach((place, index) => {
+    const li = document.createElement("li");
+    li.id = `suggestion-${index}`;
+    li.className = "suggestions__item";
+    li.setAttribute("role", "option");
+    li.setAttribute("aria-selected", "false");
+
+    const name = document.createElement("span");
+    name.className = "suggestions__name";
+    name.textContent = place.name;
+
+    const region = document.createElement("span");
+    region.className = "suggestions__region";
+    region.textContent = [place.admin1, place.country].filter(Boolean).join(", ");
+
+    li.append(name, region);
+
+    // mousedown (e não click) dispara ANTES de o input perder o foco
+    li.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      selectSuggestion(index);
+    });
+
+    suggestionsEl.appendChild(li);
+  });
+
+  suggestionsEl.classList.remove("hidden");
+  cityInput.setAttribute("aria-expanded", "true");
+}
+
+/** Destaca um item da lista (navegação com as setas). */
+function highlightSuggestion(index) {
+  const items = suggestionsEl.children;
+  if (items.length === 0) return;
+
+  // Faz a seleção "dar a volta": depois do último vem o primeiro
+  activeIndex = (index + items.length) % items.length;
+
+  [...items].forEach((item, i) => {
+    const isActive = i === activeIndex;
+    item.classList.toggle("suggestions__item--active", isActive);
+    item.setAttribute("aria-selected", String(isActive));
+  });
+  cityInput.setAttribute("aria-activedescendant", items[activeIndex].id);
+}
+
+function selectSuggestion(index) {
+  const place = suggestions[index];
+  if (!place) return;
+  cityInput.value = place.name;
+  hideSuggestions();
+  showPlace(place);
+}
+
+async function updateSuggestions(query) {
+  // Cancela a busca anterior: só a mais recente importa
+  if (suggestionsController) suggestionsController.abort();
+  suggestionsController = new AbortController();
+
+  try {
+    const places = await fetchPlaces(query, SUGGESTIONS_LIMIT, suggestionsController.signal);
+    // O usuário pode ter apagado o texto enquanto a resposta chegava
+    if (cityInput.value.trim() !== query) return;
+    renderSuggestions(places);
+  } catch (error) {
+    // AbortError é esperado (busca cancelada). Outros erros: só escondemos a
+    // lista — o usuário ainda pode buscar normalmente pelo botão.
+    if (error.name !== "AbortError") hideSuggestions();
+  }
+}
+
+function handleInput() {
+  const query = cityInput.value.trim();
+  clearTimeout(debounceTimer);
+
+  if (query.length < SUGGESTIONS_MIN_CHARS) {
+    hideSuggestions();
+    return;
+  }
+
+  // Debounce: só busca quando o usuário para de digitar por DEBOUNCE_MS
+  debounceTimer = setTimeout(() => updateSuggestions(query), DEBOUNCE_MS);
+}
+
+function handleKeydown(event) {
+  const isOpen = suggestions.length > 0;
+
+  if (event.key === "ArrowDown" && isOpen) {
+    event.preventDefault(); // evita mover o cursor do texto
+    highlightSuggestion(activeIndex + 1);
+  } else if (event.key === "ArrowUp" && isOpen) {
+    event.preventDefault();
+    highlightSuggestion(activeIndex - 1);
+  } else if (event.key === "Enter" && isOpen && activeIndex >= 0) {
+    event.preventDefault(); // não envia o formulário: escolhe a sugestão
+    selectSuggestion(activeIndex);
+  } else if (event.key === "Escape") {
+    hideSuggestions();
+  }
+}
+
 // ---------- Fluxos principais ----------
 
-async function searchCity(city) {
+/**
+ * Fluxo comum: obtém o lugar, busca o clima e mostra na tela.
+ * @param {() => Promise<object>} getPlace - função que devolve o lugar
+ */
+async function loadWeather(getPlace) {
   const requestId = ++currentRequestId;
   setLoading(true);
 
   try {
-    const place = await fetchCoordinates(city);
+    const place = await getPlace();
     const weather = await fetchWeather(place.latitude, place.longitude);
 
     if (requestId !== currentRequestId) return; // resposta antiga: ignora
 
     renderWeather(formatPlaceName(place), weather);
     clearStatus();
-    saveLastCity(city);
+    saveLastPlace(place);
   } catch (error) {
     if (requestId !== currentRequestId) return;
     console.error(error);
@@ -207,6 +355,16 @@ async function searchCity(city) {
   } finally {
     if (requestId === currentRequestId) setLoading(false);
   }
+}
+
+/** Busca pelo nome digitado (usa o resultado mais relevante). */
+function searchCity(city) {
+  return loadWeather(() => fetchCoordinates(city));
+}
+
+/** Mostra um lugar já conhecido (sugestão escolhida ou último salvo). */
+function showPlace(place) {
+  return loadWeather(async () => place);
 }
 
 async function searchByCoordinates(latitude, longitude) {
@@ -250,6 +408,7 @@ function useMyLocation() {
 
 form.addEventListener("submit", (event) => {
   event.preventDefault(); // impede o recarregamento da página
+  hideSuggestions();
   const city = cityInput.value.trim();
 
   if (!city) {
@@ -261,8 +420,16 @@ form.addEventListener("submit", (event) => {
 });
 
 locationButton.addEventListener("click", useMyLocation);
+cityInput.addEventListener("input", handleInput);
+cityInput.addEventListener("keydown", handleKeydown);
+cityInput.addEventListener("blur", hideSuggestions);
 
-// Ao abrir o app, carrega a última cidade pesquisada (ou uma padrão)
-const lastCity = loadLastCity() || "São Paulo";
-cityInput.value = lastCity;
-searchCity(lastCity);
+// Ao abrir o app, carrega o último lugar pesquisado (ou São Paulo)
+const lastPlace = loadLastPlace();
+if (lastPlace) {
+  cityInput.value = lastPlace.name;
+  showPlace(lastPlace);
+} else {
+  cityInput.value = "São Paulo";
+  searchCity("São Paulo");
+}
