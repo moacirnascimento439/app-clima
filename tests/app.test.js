@@ -20,10 +20,12 @@ const MIME = {
 };
 
 // ---------- Dados falsos (mocks) ----------
-const CITIES = {
-  "são paulo": { name: "São Paulo", admin1: "São Paulo", country: "Brasil", latitude: -23.55, longitude: -46.63 },
-  "rio de janeiro": { name: "Rio de Janeiro", admin1: "Rio de Janeiro", country: "Brasil", latitude: -22.9, longitude: -43.2 },
-};
+const CITIES = [
+  { name: "São Paulo", admin1: "São Paulo", country: "Brasil", latitude: -23.55, longitude: -46.63 },
+  { name: "Rio de Janeiro", admin1: "Rio de Janeiro", country: "Brasil", latitude: -22.9, longitude: -43.2 },
+  { name: "Rio Branco", admin1: "Acre", country: "Brasil", latitude: -9.97, longitude: -67.81 },
+  { name: "Recife", admin1: "Pernambuco", country: "Brasil", latitude: -8.05, longitude: -34.9 },
+];
 
 function forecastFor(lat, { isDay = 1 } = {}) {
   const temp = lat < -23 ? 22.4 : 31.6; // SP mais frio que o Rio
@@ -48,6 +50,7 @@ function forecastFor(lat, { isDay = 1 } = {}) {
 // ---------- Infra de teste ----------
 let server, baseURL, browser, context, page, consoleErrors;
 let apiMode; // "ok" | "fail" | "offline" | "night"
+let geocodingRequests; // registra cada busca de cidade feita pelo app
 
 before(async () => {
   server = http.createServer((req, res) => {
@@ -73,6 +76,7 @@ after(async () => {
 beforeEach(async () => {
   apiMode = "ok";
   consoleErrors = [];
+  geocodingRequests = [];
   context = await browser.newContext({ locale: "pt-BR" });
   page = await context.newPage();
   page.on("pageerror", (err) => consoleErrors.push(err.message));
@@ -80,9 +84,13 @@ beforeEach(async () => {
   await page.route("**/geocoding-api.open-meteo.com/**", (route) => {
     if (apiMode === "offline") return route.abort();
     if (apiMode === "fail") return route.fulfill({ status: 500, body: "erro" });
-    const name = new URL(route.request().url()).searchParams.get("name").toLowerCase();
-    const city = CITIES[name];
-    return route.fulfill({ json: city ? { results: [city] } : {} });
+    // Igual à API real: devolve cidades que começam com o texto, até "count"
+    const params = new URL(route.request().url()).searchParams;
+    const name = params.get("name").toLowerCase();
+    const count = Number(params.get("count"));
+    geocodingRequests.push({ name, count });
+    const results = CITIES.filter((c) => c.name.toLowerCase().startsWith(name)).slice(0, count);
+    return route.fulfill({ json: results.length ? { results } : {} });
   });
 
   await page.route("**/api.open-meteo.com/**", (route) => {
@@ -200,4 +208,86 @@ test("não tem rolagem horizontal no celular (375px)", async () => {
   await page.waitForSelector("#weather:not(.hidden)");
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
   assert.equal(overflow, false);
+});
+
+// ---------- Autocomplete ----------
+
+async function waitForApp() {
+  await page.goto(baseURL);
+  await page.waitForSelector("#weather:not(.hidden)");
+}
+
+test("autocomplete: mostra sugestões enquanto digita", async () => {
+  await waitForApp();
+  await page.fill("#city-input", "Ri");
+  await page.waitForSelector("#suggestions:not(.hidden)");
+  const items = await page.locator(".suggestions__name").allTextContents();
+  assert.deepEqual(items, ["Rio de Janeiro", "Rio Branco"]);
+  assert.equal(await page.textContent("#suggestion-1 .suggestions__region"), "Acre, Brasil");
+  assert.equal(await page.getAttribute("#city-input", "aria-expanded"), "true");
+});
+
+test("autocomplete: não busca com menos de 2 letras", async () => {
+  await waitForApp();
+  const before = geocodingRequests.length;
+  await page.fill("#city-input", "R");
+  await page.waitForTimeout(500);
+  assert.equal(geocodingRequests.length, before);
+  assert.equal(await page.isVisible("#suggestions"), false);
+});
+
+test("autocomplete: debounce faz só 1 requisição ao digitar rápido", async () => {
+  await waitForApp();
+  const before = geocodingRequests.length;
+  await page.fill("#city-input", "");
+  await page.type("#city-input", "Recife", { delay: 50 });
+  await page.waitForSelector("#suggestions:not(.hidden)");
+  const suggestionRequests = geocodingRequests.slice(before).filter((r) => r.count === 5);
+  assert.deepEqual(suggestionRequests, [{ name: "recife", count: 5 }]);
+});
+
+test("autocomplete: clicar numa sugestão carrega o clima daquele lugar", async () => {
+  await waitForApp();
+  await page.fill("#city-input", "Rio");
+  await page.click("#suggestion-1");
+  await page.waitForFunction(() => document.querySelector("#weather-city").textContent === "Rio Branco, Acre, Brasil");
+  assert.equal(await page.inputValue("#city-input"), "Rio Branco");
+  assert.equal(await page.isVisible("#suggestions"), false);
+  assert.equal(await page.textContent("#weather-temp"), "32");
+});
+
+test("autocomplete: navega com as setas e escolhe com Enter", async () => {
+  await waitForApp();
+  await page.fill("#city-input", "Rio");
+  await page.waitForSelector("#suggestions:not(.hidden)");
+  await page.press("#city-input", "ArrowDown");
+  await page.press("#city-input", "ArrowDown");
+  assert.equal(await page.getAttribute("#city-input", "aria-activedescendant"), "suggestion-1");
+  await page.press("#city-input", "ArrowDown"); // dá a volta para o primeiro
+  assert.equal(await page.getAttribute("#suggestion-0", "aria-selected"), "true");
+  await page.press("#city-input", "ArrowUp"); // volta para o último
+  await page.press("#city-input", "Enter");
+  await page.waitForFunction(() => document.querySelector("#weather-city").textContent.startsWith("Rio Branco"));
+});
+
+test("autocomplete: Esc fecha a lista", async () => {
+  await waitForApp();
+  await page.fill("#city-input", "Rio");
+  await page.waitForSelector("#suggestions:not(.hidden)");
+  await page.press("#city-input", "Escape");
+  assert.equal(await page.isVisible("#suggestions"), false);
+  assert.equal(await page.getAttribute("#city-input", "aria-expanded"), "false");
+});
+
+test("autocomplete: lembra o lugar exato escolhido após recarregar", async () => {
+  await waitForApp();
+  await page.fill("#city-input", "Rio");
+  await page.click("#suggestion-1");
+  await page.waitForFunction(() => document.querySelector("#weather-city").textContent.startsWith("Rio Branco"));
+  const before = geocodingRequests.length;
+  await page.reload();
+  await page.waitForSelector("#weather:not(.hidden)");
+  assert.equal(await page.textContent("#weather-city"), "Rio Branco, Acre, Brasil");
+  // usa as coordenadas salvas: não precisa buscar a cidade de novo
+  assert.equal(geocodingRequests.length, before);
 });

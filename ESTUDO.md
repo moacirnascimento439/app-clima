@@ -11,6 +11,7 @@
 3. [CSS: estilo e responsividade](#3-css-estilo-e-responsividade)
 4. [JavaScript: a lógica, passo a passo](#4-javascript-a-lógica-passo-a-passo)
 5. [A API Open-Meteo](#5-a-api-open-meteo)
+5.1 [Autocomplete: sugestões enquanto digita](#51-autocomplete-sugestões-enquanto-digita)
 6. [Tratamento de erros](#6-tratamento-de-erros)
 7. [Segurança](#7-segurança)
 8. [Testes automatizados](#8-testes-automatizados)
@@ -232,6 +233,67 @@ Um `Set` só guarda valores únicos. Usamos para não exibir "São Paulo, São P
 
 ---
 
+## 5.1 Autocomplete: sugestões enquanto digita
+
+**O que faz:** ao digitar "Rio", aparece uma lista com Rio de Janeiro, Rio Branco, Rio Grande... sem precisar terminar o nome nem clicar em Buscar.
+
+### Como funciona
+```
+Usuário digita "R" ─► menos de 2 letras: não faz nada
+Usuário digita "Ri" ─► inicia um timer de 300 ms
+Usuário digita "Rio" (antes dos 300 ms) ─► cancela o timer e começa outro
+...para de digitar 300 ms ─► busca "Rio" na API (count=5) ─► mostra a lista
+Usuário escolhe "Rio Branco" ─► usa as coordenadas DESSA sugestão ─► clima
+```
+
+### Conceito 1: Debounce ⭐
+Sem debounce, digitar "Florianópolis" faria **13 requisições** (uma por letra). Com debounce, faz **1**: só busca quando o usuário para de digitar.
+```js
+function handleInput() {
+  clearTimeout(debounceTimer);                     // cancela o timer anterior
+  debounceTimer = setTimeout(() => updateSuggestions(query), 300);
+}
+```
+- `setTimeout(fn, ms)` agenda uma função para daqui a `ms` milissegundos e devolve um id.
+- `clearTimeout(id)` cancela o agendamento.
+
+> **Debounce × Throttle** (pergunta comum!): *debounce* espera o usuário **parar** (bom para busca). *Throttle* executa **no máximo uma vez a cada X ms**, mesmo se o evento continuar (bom para scroll e redimensionamento de tela).
+
+### Conceito 2: AbortController
+Mesmo com debounce, uma busca lenta pode chegar depois de uma mais nova. O `AbortController` **cancela de verdade** a requisição anterior:
+```js
+if (suggestionsController) suggestionsController.abort();   // cancela a antiga
+suggestionsController = new AbortController();
+fetch(url, { signal: suggestionsController.signal });
+```
+Uma requisição cancelada lança um erro com `name === "AbortError"`, que ignoramos de propósito.
+
+> Repare: para o clima usamos um **contador** (seção 4.10) e aqui usamos o **AbortController**. Os dois resolvem *race conditions*; o AbortController ainda economiza rede, porque cancela a requisição.
+
+### Conceito 3: usar a sugestão exata
+Ao clicar em "Santa Maria – Rio Grande do Sul", usamos a latitude/longitude **daquela** sugestão (`showPlace(place)`), em vez de buscar o nome de novo (que poderia trazer outra Santa Maria). Pelo mesmo motivo, o `localStorage` agora guarda o **lugar inteiro** como JSON:
+```js
+localStorage.setItem(STORAGE_KEY, JSON.stringify(place)); // objeto → texto
+const place = JSON.parse(localStorage.getItem(STORAGE_KEY)); // texto → objeto
+```
+O `localStorage` só guarda **texto**, por isso convertemos com `JSON.stringify`/`JSON.parse`.
+
+### Conceito 4: teclado e acessibilidade
+- **↑ / ↓** destacam itens (e "dão a volta" com o operador `%`), **Enter** escolhe, **Esc** fecha.
+- `event.preventDefault()` no Enter impede que o formulário seja enviado quando uma sugestão está destacada.
+- Usamos **`mousedown`** (e não `click`) nas sugestões: o `click` só dispara depois que o campo perde o foco (`blur`), e o `blur` fecharia a lista antes do clique contar.
+- Padrão ARIA **combobox**: `role="combobox"`, `aria-expanded`, `aria-controls`, `aria-activedescendant` no input e `role="listbox"`/`role="option"` na lista. Assim o leitor de tela anuncia as sugestões.
+
+### Conceito 5: refatoração
+Antes, `searchCity` fazia tudo. Agora há uma função comum `loadWeather(getPlace)` que recebe **uma função** que devolve o lugar:
+```js
+const searchCity = (city) => loadWeather(() => fetchCoordinates(city)); // pelo nome
+const showPlace = (place) => loadWeather(async () => place);            // lugar já conhecido
+```
+Isso evita duplicar o tratamento de erros, o "Carregando..." e o contador de requisições. Esse princípio se chama **DRY** (*Don't Repeat Yourself*, "não se repita").
+
+---
+
 ## 6. Tratamento de erros
 
 | Situação | O que acontece | Mensagem |
@@ -278,7 +340,7 @@ Interceptamos as requisições e respondemos com dados falsos. Vantagens:
 2. O resultado é sempre o mesmo (testes **determinísticos**).
 3. Conseguimos simular erros difíceis de reproduzir (500, sem internet, noite).
 
-### Os 11 testes
+### Os 18 testes
 1. Carrega São Paulo ao abrir
 2. Mostra 5 dias sem incluir hoje (e o dia da semana certo)
 3. Pesquisa outra cidade
@@ -290,6 +352,13 @@ Interceptamos as requisições e respondemos com dados falsos. Vantagens:
 9. Tema noturno
 10. Geolocalização
 11. Sem rolagem horizontal no celular
+12. Autocomplete mostra sugestões ao digitar
+13. Não busca sugestões com menos de 2 letras
+14. Debounce: digitar "Recife" letra por letra faz **só 1** requisição
+15. Clicar numa sugestão carrega o clima daquele lugar
+16. Setas ↑ ↓ e Enter escolhem a sugestão
+17. Esc fecha a lista
+18. Lembra o lugar exato após recarregar, sem buscar a cidade de novo
 
 Além disso, **todo teste falha se aparecer qualquer erro de JavaScript na página** (`pageerror`).
 
@@ -324,7 +393,7 @@ Usamos o padrão **Conventional Commits**: `feat:` (funcionalidade), `fix:` (cor
 Hospedagem gratuita de sites estáticos (HTML/CSS/JS) direto do repositório. Ativado em **Settings → Pages → Branch: main / root**. É o seu "ambiente" para acessar e testar o app online.
 
 ### GitHub Actions (CI — Integração Contínua)
-O arquivo `.github/workflows/tests.yml` faz o GitHub rodar os 11 testes **automaticamente a cada push**. Se algo quebrar, aparece um ❌ no commit. Isso se chama **CI (Continuous Integration)** e é muito valorizado em vagas.
+O arquivo `.github/workflows/tests.yml` faz o GitHub rodar os 18 testes **automaticamente a cada push**. Se algo quebrar, aparece um ❌ no commit. Isso se chama **CI (Continuous Integration)** e é muito valorizado em vagas.
 
 ---
 
@@ -353,9 +422,15 @@ Contar bugs reais que você resolveu impressiona em entrevistas:
 > Quis dominar os fundamentos primeiro: DOM, eventos e fetch. Frameworks abstraem isso, e entender a base me ajuda a usar React melhor. O próximo projeto será com React.
 
 **"O que você melhoraria?"**
-> Autocomplete de cidades com *debounce*, troca °C/°F, cache das respostas para não repetir chamadas, e transformar em PWA para funcionar offline.
+> Troca °C/°F, cache das respostas para não repetir chamadas, e transformar em PWA para funcionar offline.
+
+**"Como você implementou o autocomplete?"**
+> Ao digitar, uso *debounce* de 300 ms para só chamar a API quando o usuário para de digitar, e com no mínimo 2 letras. Cancelo a requisição anterior com `AbortController` para uma resposta antiga não sobrescrever a nova. A lista funciona com mouse e teclado e segue o padrão ARIA combobox. Ao escolher, uso as coordenadas exatas da sugestão. Tudo isso está coberto por testes, incluindo um que garante que digitar "Recife" letra por letra gera só uma requisição.
 
 ### JavaScript
+**"O que é debounce? E throttle?"**
+> Debounce adia a execução até o evento parar de acontecer por um tempo (ex.: busca ao digitar). Throttle limita a execução a no máximo uma vez a cada intervalo (ex.: evento de scroll).
+
 **"Diferença entre `let`, `const` e `var`?"**
 > `const` não pode ser reatribuída; `let` pode. Ambas têm escopo de bloco. `var` tem escopo de função e sofre *hoisting* de forma confusa — evito usar.
 
@@ -416,11 +491,11 @@ Contar bugs reais que você resolveu impressiona em entrevistas:
 
 ## 12. Como apresentar o projeto em 1 minuto
 
-> "Desenvolvi um app de clima com HTML, CSS e JavaScript puro, sem frameworks, para dominar os fundamentos. Ele consome a API Open-Meteo: primeiro converte o nome da cidade em coordenadas e depois busca o clima atual e a previsão de 5 dias. Também tem geolocalização, tema noturno automático e guarda a última cidade no localStorage.
+> "Desenvolvi um app de clima com HTML, CSS e JavaScript puro, sem frameworks, para dominar os fundamentos. Ele consome a API Open-Meteo: primeiro converte o nome da cidade em coordenadas e depois busca o clima atual e a previsão de 5 dias. Enquanto o usuário digita, aparecem sugestões de cidades, com debounce para não sobrecarregar a API. Também tem geolocalização, tema noturno automático e guarda o último lugar no localStorage.
 >
 > Me preocupei com a experiência em caso de erro — cidade inexistente, falha da API e falta de internet têm mensagens próprias — e com detalhes como evitar race conditions entre buscas e usar textContent para prevenir XSS. É responsivo e acessível.
 >
-> Por fim, escrevi 11 testes end-to-end com Playwright, simulando a API com mocks, e configurei o GitHub Actions para rodá-los a cada push. O app está publicado no GitHub Pages."
+> Por fim, escrevi 18 testes end-to-end com Playwright, simulando a API com mocks, e configurei o GitHub Actions para rodá-los a cada push. O app está publicado no GitHub Pages."
 
 **Dica:** abra o app e o código durante a entrevista. Mostre o teste rodando (`npm test`).
 
@@ -431,7 +506,10 @@ Contar bugs reais que você resolveu impressiona em entrevistas:
 | Termo | Significado |
 |---|---|
 | API | Interface para um programa usar serviços de outro |
+| AbortController | Objeto que permite cancelar um `fetch` em andamento |
 | Assíncrono | Código que não bloqueia enquanto espera algo (ex.: rede) |
+| Autocomplete | Sugestões que aparecem enquanto o usuário digita |
+| Debounce | Esperar o evento parar por um tempo antes de executar |
 | CI | Integração Contínua: testes automáticos a cada mudança |
 | DOM | Árvore de objetos que representa a página |
 | E2E | Teste ponta a ponta, simulando o usuário |
@@ -453,5 +531,5 @@ Faça você mesmo (e faça commits!) — isso mostra evolução no GitHub:
 1. ⭐ **Botão °C/°F** — dica: parâmetro `temperature_unit=fahrenheit` na API.
 2. ⭐ **Mostrar horário do nascer/pôr do sol** — parâmetros `sunrise,sunset` em `daily`.
 3. ⭐⭐ **Histórico das últimas 5 cidades** clicáveis — dica: salvar um array com `JSON.stringify` no `localStorage`.
-4. ⭐⭐ **Autocomplete** — busque com `count=5` enquanto o usuário digita, usando *debounce* (esperar 300 ms sem digitação).
+4. ✅ ~~**Autocomplete**~~ — feito! Desafio extra: destacar em negrito a parte do nome que combina com o texto digitado.
 5. ⭐⭐⭐ **Escreva um teste** para cada nova funcionalidade em `tests/app.test.js`.

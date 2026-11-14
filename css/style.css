@@ -82,9 +82,15 @@ body.night {
   gap: 8px;
 }
 
-.search__input {
+/* Posição relativa: a lista de sugestões se posiciona em relação a este bloco */
+.search__field {
+  position: relative;
   flex: 1;
   min-width: 0;
+}
+
+.search__input {
+  width: 100%;
   padding: 12px 14px;
   border: 2px solid #e5e7eb;
   border-radius: 10px;
@@ -124,6 +130,46 @@ body.night {
 
 .search__button--icon {
   padding: 12px;
+}
+
+/* ===== Sugestões (autocomplete) ===== */
+.suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 10;
+  list-style: none;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.suggestions__item {
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.suggestions__item + .suggestions__item {
+  border-top: 1px solid #f3f4f6;
+}
+
+.suggestions__item:hover,
+.suggestions__item--active {
+  background: #eff6ff;
+}
+
+.suggestions__name {
+  display: block;
+  font-weight: 600;
+}
+
+.suggestions__region {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--color-muted);
 }
 
 /* ===== Status ===== */

@@ -12,17 +12,22 @@ Aplicação web que mostra o **clima atual** e a **previsão para os próximos 5
   <img src="assets/screenshot-night.png" alt="Tema noturno" width="420">
 </p>
 
+<p align="center">
+  <img src="assets/screenshot-autocomplete.png" alt="Sugestões de cidades enquanto digita" width="420">
+</p>
+
 ## ✨ Funcionalidades
 
 - 🔎 Busca de clima por nome da cidade (com acentos, em qualquer idioma)
+- ⚡ **Autocomplete**: sugestões de cidades enquanto você digita, com navegação pelo teclado (↑ ↓ Enter Esc)
 - 📍 Clima da localização atual (Geolocation API do navegador)
 - 🌡️ Temperatura, sensação térmica, umidade e velocidade do vento
 - 📅 Previsão de 5 dias com máxima e mínima
 - 🌙 Tema noturno automático quando é noite na cidade pesquisada
-- 💾 Lembra a última cidade pesquisada (`localStorage`)
+- 💾 Lembra o último lugar pesquisado (`localStorage`)
 - ⚠️ Mensagens de erro claras: cidade inexistente, falha na API, sem internet
 - 📱 Layout responsivo (celular e desktop)
-- ♿ Acessibilidade: `label` no campo, `aria-live` nas mensagens, foco visível
+- ♿ Acessibilidade: `label` no campo, padrão ARIA *combobox* no autocomplete, `aria-live` nas mensagens, foco visível
 
 ## 🛠️ Tecnologias
 
@@ -51,7 +56,7 @@ Depois acesse `http://localhost:3000`.
 
 ## 🧪 Testes
 
-O projeto tem **11 testes automatizados** que abrem o app num navegador real e simulam o uso. As respostas da API são simuladas (*mocks*), então os testes funcionam sem internet e sempre dão o mesmo resultado.
+O projeto tem **18 testes automatizados** que abrem o app num navegador real e simulam o uso. As respostas da API são simuladas (*mocks*), então os testes funcionam sem internet e sempre dão o mesmo resultado.
 
 ```bash
 npm install
@@ -59,7 +64,7 @@ npx playwright install chromium
 npm test
 ```
 
-O que é testado: carregamento inicial, busca, previsão de 5 dias, cidade inexistente, campo vazio, erro 500 da API, falta de internet, memória da última cidade, tema noturno, geolocalização e ausência de rolagem horizontal no celular.
+O que é testado: carregamento inicial, busca, previsão de 5 dias, cidade inexistente, campo vazio, erro 500 da API, falta de internet, memória do último lugar, tema noturno, geolocalização, ausência de rolagem horizontal no celular e o autocomplete (sugestões, mínimo de 2 letras, debounce, clique, teclado e Esc).
 
 ## 📁 Estrutura
 
@@ -80,12 +85,13 @@ app-clima/
 - Consumir APIs REST com `fetch` e `async/await`, encadeando duas chamadas (cidade → coordenadas → clima)
 - Tratar erros de rede e de resposta (`response.ok`) com `try/catch/finally`
 - Evitar *race conditions* quando o usuário faz várias buscas seguidas
+- Autocomplete com *debounce* e `AbortController` para não sobrecarregar a API
 - Usar `textContent` em vez de `innerHTML` para evitar injeção de HTML (XSS)
 - Escrever testes E2E com mocks de rede
 
 ## 🔮 Próximos passos
 
-- [ ] Sugestões de cidades enquanto digita (autocomplete)
+- [x] Sugestões de cidades enquanto digita (autocomplete)
 - [ ] Alternar entre °C e °F
 - [ ] Gráfico de temperatura por hora
 
