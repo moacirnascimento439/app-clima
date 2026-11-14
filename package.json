@@ -1,0 +1,14 @@
+{
+  "name": "app-clima",
+  "version": "1.0.0",
+  "description": "App de clima com HTML, CSS e JavaScript puro usando a API Open-Meteo",
+  "private": true,
+  "scripts": {
+    "start": "npx serve .",
+    "test": "node --test tests/*.test.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.48.0"
+  },
+  "license": "MIT"
+}
