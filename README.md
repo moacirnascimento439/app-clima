@@ -29,6 +29,11 @@ Aplicação web que mostra o **clima atual** e a **previsão para os próximos 5
 - 📱 Layout responsivo (celular e desktop)
 - ♿ Acessibilidade: `label` no campo, padrão ARIA *combobox* no autocomplete, `aria-live` nas mensagens, foco visível
 
+## 📗 Estudo
+
+- [Guia de estudo simples, com imagens do código](docs/guia/GUIA-DE-ESTUDO.md)
+- [Guia completo para entrevistas](ESTUDO.md)
+
 ## 🛠️ Tecnologias
 
 | Tecnologia | Uso |
