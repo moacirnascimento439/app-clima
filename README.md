@@ -2,7 +2,7 @@
 
 Aplicação web que mostra o **clima atual** e a **previsão para os próximos 5 dias** de qualquer cidade do mundo. Feita com **HTML, CSS e JavaScript puro** (sem frameworks), consumindo a API pública [Open-Meteo](https://open-meteo.com/).
 
-🔗 **Acesse online:** `https://SEU-USUARIO.github.io/app-clima/` <!-- troque pelo seu link do GitHub Pages -->
+🔗 **Acesse online:** https://moacirnascimento439.github.io/app-clima/
 
 ![Tela do app no desktop](assets/screenshot-desktop.png)
 
@@ -42,7 +42,7 @@ Não é necessário instalar nada para **usar** o app: basta abrir o `index.html
 Para rodar com um servidor local (recomendado):
 
 ```bash
-git clone https://github.com/SEU-USUARIO/app-clima.git
+git clone https://github.com/moacirnascimento439/app-clima.git
 cd app-clima
 npx serve .
 ```
@@ -91,7 +91,7 @@ app-clima/
 
 ## 👤 Autor
 
-Feito por **SEU NOME** — [LinkedIn](https://www.linkedin.com/in/SEU-PERFIL) · [GitHub](https://github.com/SEU-USUARIO)
+Feito por **SEU NOME** — [LinkedIn](https://www.linkedin.com/in/SEU-PERFIL) · [GitHub](https://github.com/moacirnascimento439)
 
 ## 📄 Licença
 
